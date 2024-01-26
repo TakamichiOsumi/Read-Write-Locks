@@ -106,7 +106,8 @@ rw_lock_unlock(rw_lock *rwl){
     pthread_mutex_unlock(&rwl->state_mutex);
 }
 
-void rw_lock_destroy(rw_lock *rwl){
+void
+rw_lock_destroy(rw_lock *rwl){
     assert(rwl->running_threads_in_CS == 0);
     assert(rwl->waiting_reader_threads == 0);
     assert(rwl->waiting_writer_threads == 0);
