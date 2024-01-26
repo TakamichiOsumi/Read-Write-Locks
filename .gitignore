@@ -1,3 +1,6 @@
+# Main Program
+executable
+
 # Prerequisites
 *.d
 
