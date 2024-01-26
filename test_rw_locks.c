@@ -12,7 +12,7 @@
  */
 void
 assert_dump_handler(int sig, siginfo_t *info, void *q){
-    fprintf(stderr, "the thread id where raised assertion failure : %p\n",
+    fprintf(stderr, "\n!!! the thread id where raised assertion failure : %p\n\n",
 	    pthread_self());
     exit(-1);
 }
@@ -45,7 +45,7 @@ write_thread_cb(void *arg){
 	rw_lock_wr_lock(unique->rwl);
 	/*
 	 * No need to implement an actual write operation for debug.
-	 * Do nothing here and check the output prints.
+	 * Do nothing here. An assertion check below is sufficient.
 	 */
 	printf("[%s] (id = %d & pthread_id = %p) has entered C.S. with %d thread\n",
 	       __FUNCTION__, unique->thread_id, pthread_self(),
@@ -55,7 +55,11 @@ write_thread_cb(void *arg){
 	 * entered the C.S. during the write operation.
 	 */
 	assert(unique->rwl->running_threads_in_CS == 1);
+
 	rw_lock_unlock(unique->rwl);
+	printf("[%s] (id = %d & pthread_id = %p) has left C.S. with %d thread\n",
+	       __FUNCTION__, unique->thread_id, pthread_self(),
+	       unique->rwl->running_threads_in_CS);
     }
 
     free(arg);
@@ -73,7 +77,7 @@ read_thread_cb(void *arg){
 	rw_lock_rd_lock(unique->rwl);
 	/*
 	 * No need to implement an actual read operation for debug.
-	 * Do nothing here and check the output prints.
+	 * Do nothing here. See write_thread_cb also.
 	 */
 	printf("[%s] (id = %d & pthread_id = %p) has entered C.S. with %d threads\n",
 	       __FUNCTION__, unique->thread_id, pthread_self(),
@@ -81,6 +85,9 @@ read_thread_cb(void *arg){
 	/* Make sure there is more than one thread in the C.S. */
 	assert(unique->rwl->running_threads_in_CS >= 1);
 	rw_lock_unlock(unique->rwl);
+	printf("[%s] (id = %d & pthread_id = %p) has left C.S. with %d threads\n",
+	       __FUNCTION__, unique->thread_id, pthread_self(),
+	       unique->rwl->running_threads_in_CS);
     }
 
     free(arg);

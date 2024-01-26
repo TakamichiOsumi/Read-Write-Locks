@@ -78,6 +78,7 @@ rw_lock_wr_lock(rw_lock *rwl){
 void
 rw_lock_unlock(rw_lock *rwl){
     pthread_mutex_lock(&rwl->state_mutex);
+
     if (rwl->is_locked_by_writer){
 	assert(rwl->writer_thread_in_CS == pthread_self());
 	assert(rwl->running_threads_in_CS == 1);
@@ -99,7 +100,11 @@ rw_lock_unlock(rw_lock *rwl){
     }else{
 	/*
 	 * The application program has called rw_lock_unlock()
-	 * even when no one is taking the lock. Raise the assertion failure.
+	 * even when no one is taking the lock. This path means
+	 * there was no corresponding call of either rw_lock_rd_lock
+	 * or rw_lock_wr_lock.
+	 *
+	 * Raise the assertion failure.
 	 */
 	assert(0);
     }
