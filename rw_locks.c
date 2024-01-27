@@ -14,8 +14,16 @@ rw_lock_init(void){
 	exit(-1);
     }
 
-    pthread_mutex_init(&new_rwl->state_mutex, NULL);
-    pthread_cond_init(&new_rwl->state_cv, NULL);
+    if (pthread_mutex_init(&new_rwl->state_mutex, NULL) != 0){
+	perror("pthread_mutex_init");
+	exit(-1);
+    }
+
+    if (pthread_cond_init(&new_rwl->state_cv, NULL) != 0){
+	perror("pthread_cond_init");
+	exit(-1);
+    }
+
     new_rwl->running_threads_in_CS = 0;
     new_rwl->waiting_reader_threads = 0;
     new_rwl->waiting_writer_threads = 0;
@@ -32,6 +40,17 @@ rw_lock_rd_lock(rw_lock *rwl){
     /*
      * For any read operation, wait only if the lock is
      * taken by a write thread.
+     *
+     * There is no need to check the reader related conditions
+     * in the below predicate, because even if other reader
+     * thread took a lock, it is harmless to set the flag of
+     * reader's lock true again (and also, to increment the
+     * number of reader threads).
+     *
+     * The reader's lock flag doesn't recognize which reader
+     * thread took the lock and it is sufficient to indicate
+     * there is at least one reader thread who took a lock
+     * for the rw lock logics. See rw_lock_wr_lock also.
      */
     while(rwl->writer_thread_in_CS && rwl->is_locked_by_writer){
 	rwl->waiting_reader_threads++;
