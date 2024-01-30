@@ -1,4 +1,4 @@
-# Read/Write Locks
+# Recursive Read/Write Locks
 
 Self implementation of read/write locks that follow below properties:
 
