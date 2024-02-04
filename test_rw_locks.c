@@ -9,12 +9,19 @@
 /*
  * All threads need to register signal handler 'assert_dump_handler'
  * for debugging via 'prepare_assertion_failure'.
+ *
+ * Depend on async-signal-safe functions only.
  */
 void
 assert_dump_handler(int sig, siginfo_t *info, void *q){
-    fprintf(stderr, "\n!!! the thread id where raised assertion failure : %p\n\n",
-	    pthread_self());
-    exit(-1);
+    char *start_msg = "\n!!! the thread id where raised assertion failure : ",
+	*end_msg = "\n\n";
+
+    write(STDERR_FILENO, start_msg, sizeof(start_msg));
+    write(STDERR_FILENO, pthread_self(), sizeof(pthread_self()));
+    write(STDERR_FILENO, end_msg, sizeof(end_msg));
+
+    _exit(-1);
 }
 
 void
