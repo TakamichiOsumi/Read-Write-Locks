@@ -14,8 +14,8 @@
  */
 void
 assert_dump_handler(int sig, siginfo_t *info, void *q){
-    char *start_msg = "\n!!! the thread id where raised assertion failure : ",
-	*end_msg = "\n\n";
+    char start_msg[] = "\n!!! the thread id where raised assertion failure : ",
+	end_msg[] = "\n\n";
 
     write(STDERR_FILENO, start_msg, sizeof(start_msg));
     write(STDERR_FILENO, pthread_self(), sizeof(pthread_self()));
@@ -29,9 +29,10 @@ prepare_assertion_failure(void){
     struct sigaction act;
 
     act.sa_sigaction = assert_dump_handler;
-    act.sa_flags = SIGABRT;
+    act.sa_flags = SIGUSR1;
     sigemptyset(&act.sa_mask);
-    sigaction(SIGABRT, &act, NULL);
+
+    sigaction(SIGUSR1, &act, NULL);
 }
 
 typedef struct thread_unique {
@@ -59,11 +60,9 @@ write_thread_cb(void *arg){
 	printf("[%s] (id = %d & pthread_id = %p) has entered C.S. with %d thread\n",
 	       __FUNCTION__, unique->thread_id, pthread_self(),
 	       unique->rwl->running_threads_in_CS);
-	/*
-	 * Cause an assertion failure if more than one thread has
-	 * entered the C.S. during the write operation.
-	 */
-	assert(unique->rwl->running_threads_in_CS == 1);
+
+	my_assert("Check if only one thread has entered the C.S. during the write operation",
+		  __FILE__, __LINE__, unique->rwl->running_threads_in_CS == 1);
 
 	rw_lock_unlock(unique->rwl);
 	printf("[%s] (id = %d & pthread_id = %p) has left C.S. with %d thread\n",
@@ -92,9 +91,8 @@ read_thread_cb(void *arg){
 	printf("[%s] (id = %d & pthread_id = %p) has entered C.S. with %d threads\n",
 	       __FUNCTION__, unique->thread_id, pthread_self(),
 	       unique->rwl->running_threads_in_CS);
-	/* Make sure there is more than one thread in the C.S. */
-	assert(unique->rwl->running_threads_in_CS >= 1);
-
+	my_assert("Make sure there are more than one threads in the C.S.\n",
+		  __FILE__, __LINE__, unique->rwl->running_threads_in_CS >= 1);
 	rw_lock_unlock(unique->rwl);
 	printf("[%s] (id = %d & pthread_id = %p) has left C.S. with %d threads\n",
 	       __FUNCTION__, unique->thread_id, pthread_self(),
@@ -152,8 +150,6 @@ rw_threads_test(void){
     }
 }
 
-/* -------- <FIRST TEST END> -------- */
-
 /* -------- <SECOND TEST START> -------- */
 
 static void *
@@ -173,7 +169,8 @@ rec_write_thread_cb(void *arg){
 	rw_lock_wr_lock(unique->rwl);
 
 	/* The main C.S. No need to do anything. */
-	assert(unique->rwl->running_threads_in_CS == 1);
+	my_assert("Check if only one thread has entered in the C.S. even when ecursive write.\n",
+		  __FILE__, __LINE__, unique->rwl->running_threads_in_CS == 1);
 
 	printf("[%s] (id = %d & pthread_id = %p) will release the 3rd rw-lock\n",
 	       __FUNCTION__, unique->thread_id, pthread_self());
@@ -211,7 +208,8 @@ rec_read_thread_cb(void *arg){
 	       unique->rwl->running_threads_in_CS);
 
 	/* The main C.S. */
-	assert(unique->rwl->running_threads_in_CS >= 1);
+	my_assert("Make sure there are more than one threads in the C.S. during recursive reads\n",
+		  __FILE__, __LINE__, unique->rwl->running_threads_in_CS >= 1);
 	
 	rw_lock_unlock(unique->rwl);
 	rw_lock_unlock(unique->rwl);

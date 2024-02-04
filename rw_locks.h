@@ -33,6 +33,8 @@ typedef struct rw_lock {
     pthread_mutex_t state_mutex;
 } rw_lock;
 
+void my_assert(char *description, char *filename, int lineno, int expr);
+
 rw_lock *rw_lock_init(unsigned int thread_total_no);
 void rw_lock_rd_lock(rw_lock *rwl);
 void rw_lock_wr_lock(rw_lock *rwl);
