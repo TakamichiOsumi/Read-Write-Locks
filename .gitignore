@@ -1,5 +1,5 @@
 # Main Program
-executable
+exe_*
 
 # Prerequisites
 *.d

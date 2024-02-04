@@ -29,7 +29,7 @@ prepare_assertion_failure(void){
     struct sigaction act;
 
     act.sa_sigaction = assert_dump_handler;
-    act.sa_flags = SIGUSR1;
+    act.sa_flags = SA_SIGINFO;
     sigemptyset(&act.sa_mask);
 
     sigaction(SIGUSR1, &act, NULL);
@@ -91,7 +91,7 @@ read_thread_cb(void *arg){
 	printf("[%s] (id = %d & pthread_id = %p) has entered C.S. with %d threads\n",
 	       __FUNCTION__, unique->thread_id, pthread_self(),
 	       unique->rwl->running_threads_in_CS);
-	my_assert("Make sure there are more than one threads in the C.S.\n",
+	my_assert("Make sure there are more than one threads in the C.S.",
 		  __FILE__, __LINE__, unique->rwl->running_threads_in_CS >= 1);
 	rw_lock_unlock(unique->rwl);
 	printf("[%s] (id = %d & pthread_id = %p) has left C.S. with %d threads\n",
@@ -169,7 +169,7 @@ rec_write_thread_cb(void *arg){
 	rw_lock_wr_lock(unique->rwl);
 
 	/* The main C.S. No need to do anything. */
-	my_assert("Check if only one thread has entered in the C.S. even when ecursive write.\n",
+	my_assert("Check if only one thread has entered in the C.S. even when ecursive write",
 		  __FILE__, __LINE__, unique->rwl->running_threads_in_CS == 1);
 
 	printf("[%s] (id = %d & pthread_id = %p) will release the 3rd rw-lock\n",
@@ -208,7 +208,7 @@ rec_read_thread_cb(void *arg){
 	       unique->rwl->running_threads_in_CS);
 
 	/* The main C.S. */
-	my_assert("Make sure there are more than one threads in the C.S. during recursive reads\n",
+	my_assert("Make sure there are more than one threads in the C.S. during recursive reads",
 		  __FILE__, __LINE__, unique->rwl->running_threads_in_CS >= 1);
 	
 	rw_lock_unlock(unique->rwl);

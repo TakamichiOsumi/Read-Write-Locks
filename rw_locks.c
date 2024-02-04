@@ -7,18 +7,24 @@
 #include <string.h>
 #include "rw_locks.h"
 
+/* Turn on the self debug assertion for more advanced tests */
 #define DEBUG_RW_LOCK
 
+/*
+ * Raise the SIGUSR1 signal to notify the application bug.
+ *
+ * Exported so as to be utilized by the application side of this rw_lock library.
+ */
 void
 my_assert(char *description, char *filename, int lineno, int expr){
 #ifdef DEBUG_RW_LOCK
-    /* Raise the assertion failure if the expr is equal to zero */
+    /* Raise the assertion failure if the 'expr' is equal to zero */
     if (expr == 0){
-	if (description != NULL)
-	    fprintf(stderr, "%s:%d:%s", filename, lineno, description);
-	else
-	    fprintf(stderr, "%s:%d", filename, lineno);
-
+	if (description != NULL){
+	    fprintf(stderr, "%s:%d:%s\n", filename, lineno, description);
+	}else{
+	    fprintf(stderr, "%s:%d\n", filename, lineno);
+	}
 	raise(SIGUSR1);
     }
 #else
@@ -327,6 +333,7 @@ rw_lock_destroy(rw_lock *rwl){
 	my_assert(NULL, __FILE__, __LINE__,
 		  rwl->manager.reader_threads_count_in_CS[i] == 0);
     }
+
     pthread_cond_destroy(&rwl->state_cv);
     pthread_mutex_destroy(&rwl->state_mutex);
 }
