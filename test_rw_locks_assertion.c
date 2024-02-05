@@ -91,6 +91,15 @@ test_destory_rwl_with_lock(){
 }
 
 /* <Scenario 3 > */
+/*
+ * Step1 : T1_flag and T2_flag gets updated to true by T1 and T2 after their read locks.
+ * Step2 : T3_flag detects it and calls rw_lock_unlock without the call of rw_lock_rd_lock.
+ * Step3 : Step2 raises the assertion failure.
+ * Step4 : T3 resumes its execution from the failure and let T1 release its read lock.
+ * Step5 : T1 unlocks the read lock and let T2 release its read lock.
+ * Step6 : T2 unlocks the read lock and let T3 cleans up all the resources.
+ * Step7 : T3 destroys the read write lock object.
+ */
 bool T1_flag = false, T2_flag = false, T3_flag = false;
 bool T1_released_rdlock = false, T2_released_rdlock = false;
 
@@ -155,6 +164,7 @@ wait_and_unlock_cb(void *arg){
     rw_lock *rwl = tdata->rwl;
 
     if (sigsetjmp(env, 1) == 0){
+
 	printf("[%s] T3 waits until other threads is done with read locks\n",
 	       __FUNCTION__);
 
