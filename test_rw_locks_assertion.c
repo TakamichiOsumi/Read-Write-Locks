@@ -46,6 +46,8 @@ test_unlock_without_locking(){
 
     if (sigsetjmp(env, 1) == 0){
 	/*
+	 * <Scenario 1>
+	 *
 	 * rw_lock is forced to be unlocked without any lock operation.
 	 */
 	rw_lock_unlock(rwl);
@@ -68,6 +70,8 @@ test_destory_rwl_with_lock(){
 
     if (sigsetjmp(env, 1) == 0){
 	/*
+	 * <Scenario 2>
+	 *
 	 * rw_lock is forced to be destroyed when a lock is taken and not released.
 	 */
 	rw_lock_rd_lock(rwl);
@@ -86,6 +90,134 @@ test_destory_rwl_with_lock(){
     }
 }
 
+/* <Scenario 3 > */
+bool T1_flag = false, T2_flag = false, T3_flag = false;
+bool T1_released_rdlock = false, T2_released_rdlock = false;
+
+typedef struct thread_data {
+    uintptr_t thread_id;
+    rw_lock *rwl;
+} thread_data;
+
+static thread_data *
+gen_thread_data(uintptr_t thread_id, rw_lock *rwl){
+    thread_data *td;
+
+    if ((td = (thread_data *) malloc(sizeof(thread_data))) == NULL){
+	    perror("malloc");
+	    exit(1);
+    }
+
+    td->thread_id = thread_id;
+    td->rwl = rwl;
+
+    return td;
+}
+
+static void *
+lock_and_wait_cb(void *arg){
+    thread_data *tdata = (thread_data *) arg;
+    rw_lock *rwl = tdata->rwl;
+
+    if (tdata->thread_id == 1){
+
+	rw_lock_rd_lock(rwl);
+
+	T1_flag = true;
+	while(!T3_flag)
+	    ;
+
+	rw_lock_unlock(rwl);
+	T1_released_rdlock = true;
+
+	printf("[%s] T1 has set the flag = true\n", __FUNCTION__);
+
+    }else if (tdata->thread_id == 2){
+
+	rw_lock_rd_lock(rwl);
+	T2_flag = true;
+
+	while(!T1_released_rdlock)
+	    ;
+	rw_lock_unlock(rwl);
+	T2_released_rdlock = true;
+
+	printf("[%s] T3 has set the flag = true\n", __FUNCTION__);
+    }
+
+    return NULL;
+}
+
+static void *
+wait_and_unlock_cb(void *arg){
+
+    thread_data *tdata = (thread_data *) arg;
+    rw_lock *rwl = tdata->rwl;
+
+    if (sigsetjmp(env, 1) == 0){
+	printf("[%s] T3 waits until other threads is done with read locks\n",
+	       __FUNCTION__);
+
+	while(!(T1_flag && T2_flag))
+	    ;
+
+	printf("[%s] T3 breaks the loop, Let it unlock a rdlock without locking\n",
+	       __FUNCTION__);
+	/* Will hit the assertion failure (after holding the mutex lock in rwl)*/
+	rw_lock_unlock(rwl);
+
+    }else{
+	if (!expected_failure_raised){
+	    printf("NG : [%s] The expected assertion failure doesn't work\n",
+		   __FUNCTION__);
+	    exit(-1);
+	}else{
+	    printf("OK : [%s] The expected assertion failure works\n",
+		   __FUNCTION__);
+
+	    /* T3 raised the failure with holding the lock */
+	    pthread_mutex_unlock(&rwl->state_mutex);
+
+	    T3_flag = true;
+
+	    while(!T2_released_rdlock)
+		;
+
+	    rw_lock_destroy(rwl);
+
+	    printf("[%s] rw_lock object has been cleaned up correctly\n",
+		   __FUNCTION__);
+	}
+    }
+    return NULL;
+}
+
+static void
+test_unregistered_thread_unlocking(){
+#define THREADS_NUM 3
+
+    rw_lock *rwl;
+    pthread_t handlers[THREADS_NUM];
+    thread_data *T1_data, *T2_data, *T3_data;
+
+    /*
+     * <Scenario 3>
+     *
+     * Prepare three thread T1, T2 and T3.
+     * After T1 and T2 take the read locks, T3 tries to release a read lock.
+     * T3 triggers the assertion failure for invalid unlocking.
+     */
+    rwl = rw_lock_init(THREADS_NUM);
+    T1_data = gen_thread_data(1, rwl);
+    T2_data = gen_thread_data(2, rwl);
+    T3_data = gen_thread_data(3, rwl);
+    pthread_create(&handlers[0], NULL, lock_and_wait_cb, T1_data);
+    pthread_create(&handlers[1], NULL, lock_and_wait_cb, T2_data);
+    pthread_create(&handlers[0], NULL, wait_and_unlock_cb, T3_data);
+
+    pthread_exit(0);
+}
+
 int
 main(int argc, char **argv){
     /*
@@ -100,6 +232,11 @@ main(int argc, char **argv){
     prepare_assertion_failure();
     expected_failure_raised = false;
     test_destory_rwl_with_lock();
+
+    printf("--- <Scenario 3> ---\n");
+    prepare_assertion_failure();
+    expected_failure_raised = false;
+    test_unregistered_thread_unlocking();
 
     return 0;
 }

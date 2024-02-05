@@ -24,5 +24,5 @@ clean:
 	rm -rf $(PROGRAM1) $(PROGRAM2) $(OUTPUT_LIB) rw_locks.o
 
 test: $(PROGRAM1) $(PROGRAM2)
-	@./$(PROGRAM1) && echo "Successful when the result is zero >>> $$?"
-	@./$(PROGRAM2) && echo "Successful when the result is zero >>> $$?"
+	@./$(PROGRAM1) &> /dev/null && echo "Successful when the result is zero >>> $$?"
+	@./$(PROGRAM2) &> /dev/null && echo "Successful when the result is zero >>> $$?"
