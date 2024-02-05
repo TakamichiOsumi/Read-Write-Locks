@@ -173,7 +173,7 @@ wait_and_unlock_cb(void *arg){
 
 	printf("[%s] T3 breaks the loop, Let it unlock a rdlock without locking\n",
 	       __FUNCTION__);
-	/* Will hit the assertion failure (after holding the mutex lock in rwl)*/
+	/* Will hit the assertion failure (after holding the mutex lock in rwl) */
 	rw_lock_unlock(rwl);
 
     }else{
