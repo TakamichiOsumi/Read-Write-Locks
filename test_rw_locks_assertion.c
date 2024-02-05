@@ -223,7 +223,7 @@ test_unregistered_thread_unlocking(){
     T3_data = gen_thread_data(3, rwl);
     pthread_create(&handlers[0], NULL, lock_and_wait_cb, T1_data);
     pthread_create(&handlers[1], NULL, lock_and_wait_cb, T2_data);
-    pthread_create(&handlers[0], NULL, wait_and_unlock_cb, T3_data);
+    pthread_create(&handlers[2], NULL, wait_and_unlock_cb, T3_data);
 
     pthread_exit(0);
 }
