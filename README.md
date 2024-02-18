@@ -1,6 +1,6 @@
 # Recursive Read/Write Locks
 
-Self implementation of read/write locks that follow below properties:
+Rewrite read/write locks that follow below properties to gain a deeper understanding of its internal and application:
 
 1. When reader thread is executing in the critical section, the other reader threads can enter the critical section as well.
 
