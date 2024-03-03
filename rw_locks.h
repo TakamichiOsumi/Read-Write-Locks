@@ -17,16 +17,14 @@ typedef struct rec_count_manager {
 } rec_count_manager;
 
 typedef struct rw_lock {
-    uint16_t running_threads_in_CS;
-
-    bool reader_thread_in_CS;
+    /* reader thread */
     uint16_t running_reader_threads_in_CS;
     bool block_new_reader_thread_entry;
     uint16_t waiting_reader_threads;
     bool is_locked_by_reader;
     rec_count_manager reader_count_manager;
 
-    bool writer_thread_in_CS;
+    /* writer thread */
     uint16_t running_writer_threads_in_CS;
     bool block_new_writer_thread_entry;
     uint16_t waiting_writer_threads;
@@ -48,8 +46,8 @@ void my_assert(char *description, char *filename,
 monitor *
 create_monitor(unsigned int reader_thread_total_no,
 	       unsigned int writer_thread_total_no);
-#define rw_lock_init(reader_thread_total_no) \
-    create_monitor(reader_thread_total_no, 1)
+#define rw_lock_init(reader_thread_total_no, writer_thread_total_no) \
+    create_monitor(reader_thread_total_no, writer_thread_total_no)
 
 void write_lock_monitor(monitor *m);
 #define rw_lock_wr_lock(m)			\
