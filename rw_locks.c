@@ -63,8 +63,7 @@ rw_lock_get_manager_index(rec_count_manager *manager){
 }
 
 static void
-rw_lock_init_manager(rec_count_manager *manager,
-		     unsigned int upper_limit){
+rw_lock_init_manager(rec_count_manager *manager, unsigned int upper_limit){
     int i = 0;
 
     manager->max_threads_count_in_CS = upper_limit;
@@ -79,15 +78,13 @@ rw_lock_init_manager(rec_count_manager *manager,
     }
 }
 
-monitor *
-create_monitor(unsigned int reader_thread_total_no,
-	       unsigned int writer_thread_total_no){
+rw_lock *
+rw_lock_init(unsigned int reader_thread_total_no,
+	     unsigned int writer_thread_total_no){
     rw_lock *new_rwl;
 
-    my_assert(NULL, __FILE__, __LINE__,
-	      reader_thread_total_no >= 0);
-    my_assert(NULL, __FILE__, __LINE__,
-	      writer_thread_total_no >= 0);
+    my_assert(NULL, __FILE__, __LINE__, reader_thread_total_no >= 0);
+    my_assert(NULL, __FILE__, __LINE__, writer_thread_total_no >= 0);
 
     new_rwl = (rw_lock *) my_malloc(sizeof(rw_lock));
 

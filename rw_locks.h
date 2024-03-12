@@ -40,17 +40,11 @@ typedef struct rw_lock {
     pthread_mutex_t state_mutex;
 } rw_lock;
 
-typedef rw_lock monitor;
-
 void my_assert(char *description, char *filename,
 	       int lineno, int expr);
 
-monitor *
-create_monitor(unsigned int reader_thread_total_no,
-	       unsigned int writer_thread_total_no);
-
-#define rw_lock_init(reader_thread_total_no) \
-    create_monitor(reader_thread_total_no, 1)
+rw_lock *rw_lock_init(unsigned int thread_total_no,
+		      unsigned int writer_thread_total_no);
 
 void rw_lock_rd_lock(rw_lock *rwl);
 void rw_lock_wr_lock(rw_lock *rwl);
