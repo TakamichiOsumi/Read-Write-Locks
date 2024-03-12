@@ -48,23 +48,13 @@ void my_assert(char *description, char *filename,
 monitor *
 create_monitor(unsigned int reader_thread_total_no,
 	       unsigned int writer_thread_total_no);
+
 #define rw_lock_init(reader_thread_total_no) \
     create_monitor(reader_thread_total_no, 1)
 
-void write_lock_monitor(monitor *m);
-#define rw_lock_wr_lock(m)			\
-    write_lock_monitor(m)
-
-void read_lock_monitor(monitor *m);
-#define rw_lock_rd_lock(m)			\
-    read_lock_monitor(m)
-
-void unlock_monitor(monitor *monitor);
-#define rw_lock_unlock(m)			\
-    unlock_monitor(m)
-
-void destroy_monitor(monitor *monitor);
-#define rw_lock_destroy(m) 			\
-    destroy_monitor(m);
+void rw_lock_rd_lock(rw_lock *rwl);
+void rw_lock_wr_lock(rw_lock *rwl);
+void rw_lock_unlock(rw_lock *rwl);
+void rw_lock_destroy(rw_lock *rwl);
 
 #endif

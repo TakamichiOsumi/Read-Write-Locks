@@ -135,7 +135,7 @@ create_monitor(unsigned int reader_thread_total_no,
 }
 
 void
-read_lock_monitor(monitor *rwl){
+rw_lock_rd_lock(rw_lock *rwl){
     rec_count_manager *manager;
     int index;
 
@@ -195,7 +195,7 @@ read_lock_monitor(monitor *rwl){
 }
 
 void
-write_lock_monitor(monitor *rwl){
+rw_lock_wr_lock(rw_lock *rwl){
     rec_count_manager *manager;
     int index;
 
@@ -247,7 +247,7 @@ write_lock_monitor(monitor *rwl){
 }
 
 void
-unlock_monitor(monitor *rwl){
+rw_lock_unlock(rw_lock *rwl){
     rec_count_manager *manager;
     int index;
 
@@ -364,7 +364,7 @@ unlock_monitor(monitor *rwl){
     pthread_mutex_unlock(&rwl->state_mutex);
 }
 
-static void
+void
 verify_manager_with_all_zeros(rec_count_manager *manager){
     int i;
 
@@ -376,7 +376,7 @@ verify_manager_with_all_zeros(rec_count_manager *manager){
 }
 
 void
-destroy_monitor(monitor *rwl){
+rw_lock_destroy(rw_lock *rwl){
     my_assert(NULL, __FILE__, __LINE__,
 	      rwl->running_threads_in_CS == 0);
     my_assert(NULL, __FILE__, __LINE__,
