@@ -1,4 +1,4 @@
-# Recursive Read/Write Locks (WIP)
+# Recursive Read/Write Locks
 
 Rewrite read/write locks that follow below properties to gain a deeper understanding of its internal and application:
 
