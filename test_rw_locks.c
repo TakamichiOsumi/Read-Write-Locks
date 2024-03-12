@@ -199,6 +199,7 @@ rec_read_thread_cb(void *arg){
 	rw_lock_unlock(unique->rwl);
 	rw_lock_unlock(unique->rwl);
 	rw_lock_unlock(unique->rwl);
+	rw_lock_unlock(unique->rwl);
 	printf("[%s] (id = %d & pthread_id = %p) has left C.S. with %d threads\n",
 	       __FUNCTION__, unique->thread_id, pthread_self(),
 	       unique->rwl->running_writer_threads_in_CS +
@@ -263,10 +264,9 @@ main(int argc, char **argv){
     printf("<Tests for thread rw-locks>\n");
     rw_threads_test();
 
-    /*
-     * printf("<Tests for recursive rw-locks>\n");
-     * rec_rw_threads_test();
-     */
+
+    /* printf("<Tests for recursive rw-locks>\n");
+       rec_rw_threads_test(); */
 
     pthread_exit(0);
 

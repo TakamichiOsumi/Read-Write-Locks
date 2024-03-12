@@ -75,6 +75,7 @@ rw_lock_init_manager(rec_count_manager *manager,
 	(uint16_t *) my_malloc(sizeof(int) * upper_limit);
     manager->thread_ids =
 	(pthread_t *) my_malloc(sizeof(pthread_t) * upper_limit);
+
     for(; i < upper_limit; i++){
 	manager->threads_count_in_CS[i] = 0;
 	manager->thread_ids[i] = NULL;
@@ -312,7 +313,7 @@ unlock_monitor(monitor *rwl){
 		    rwl->block_new_reader_thread_entry = false;
 		}else if (rwl->waiting_writer_threads > 0){
 		    pthread_cond_broadcast(&rwl->writer_cv);
-		    }*/
+		}*/
 	    }else{
 		/* Replacement property */
 	    }
