@@ -1,7 +1,7 @@
 CC	= gcc
 CFLAGS	= -O0 -Wall
-PROGRAM1	= run_basic_tests
-PROGRAM2	= run_advanced_tests
+PROGRAM1	= exec_basic_tests
+PROGRAM2	= exec_advanced_tests
 OUTPUT_LIB	= librw_lock.a
 
 all: $(PROGRAM1) $(PROGRAM2) $(OUTPUT_LIB)

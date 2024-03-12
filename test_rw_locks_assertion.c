@@ -12,8 +12,8 @@ static sigjmp_buf env;
 static bool expected_failure_raised;
 
 /*
- * All execution units need to register signal handler
- * 'assert_dump_handler' for testing via 'prepare_assertion_failure'.
+ * All execution units need to register signal handler 'assert_dump_handler'
+ * for testing via 'prepare_assertion_failure'.
  */
 void
 assert_dump_handler(int sig, siginfo_t *info, void *q){
@@ -42,7 +42,7 @@ prepare_assertion_failure(void){
 
 static void
 test_unlock_without_locking(){
-    rw_lock *rwl = rw_lock_init(1, 0);
+    rw_lock *rwl = rw_lock_init(1);
 
     if (sigsetjmp(env, 1) == 0){
 	/*
@@ -66,7 +66,7 @@ test_unlock_without_locking(){
 
 static void
 test_destory_rwl_with_lock(){
-    rw_lock *rwl = rw_lock_init(1, 0);
+    rw_lock *rwl = rw_lock_init(1);
 
     if (sigsetjmp(env, 1) == 0){
 	/*
@@ -217,7 +217,7 @@ test_unregistered_thread_unlocking(){
      * After T1 and T2 take the read locks, T3 tries to release a read lock.
      * T3 triggers the assertion failure for invalid unlocking.
      */
-    rwl = rw_lock_init(THREADS_NUM, THREADS_NUM);
+    rwl = rw_lock_init(THREADS_NUM);
     T1_data = gen_thread_data(1, rwl);
     T2_data = gen_thread_data(2, rwl);
     T3_data = gen_thread_data(3, rwl);
