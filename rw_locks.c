@@ -32,29 +32,18 @@ my_assert(char *description, char *filename, int lineno, int expr){
 #endif
 }
 
-void *
-my_malloc(size_t size){
-    void *p;
-
-    if ((p = malloc(size)) == NULL){
-	perror("malloc");
-	exit(-1);
-    }
-
-    return p;
-}
-
 /*
  * Find the self index from the reader thread manager.
  *
  * On failure, return -1.
  */
 static int
-rw_lock_get_manager_index(rec_count_manager *manager){
+rw_lock_get_reader_index(rw_lock *rwl){
+    rec_rdt_manager *manager = &rwl->manager;
     int index;
 
-    for (index = 0; index < manager->max_threads_count_in_CS; index++){
-	if (manager->thread_ids[index] == pthread_self()){
+    for (index = 0; index < manager->thread_total_no; index++){
+	if (manager->reader_thread_ids[index] == pthread_self()){
 	    return index;
 	}
     }
@@ -62,104 +51,93 @@ rw_lock_get_manager_index(rec_count_manager *manager){
     return -1;
 }
 
-static void
-rw_lock_init_manager(rec_count_manager *manager, unsigned int upper_limit){
-    int i = 0;
-
-    manager->max_threads_count_in_CS = upper_limit;
-    manager->insert_index = 0;
-    manager->threads_count_in_CS =
-	(uint16_t *) my_malloc(sizeof(int) * upper_limit);
-    manager->thread_ids =
-	(pthread_t *) my_malloc(sizeof(pthread_t) * upper_limit);
-    for(; i < upper_limit; i++){
-	manager->threads_count_in_CS[i] = 0;
-	manager->thread_ids[i] = NULL;
-    }
-}
-
 rw_lock *
-rw_lock_init(unsigned int reader_thread_total_no,
-	     unsigned int writer_thread_total_no){
+rw_lock_init(unsigned int thread_total_no){
     rw_lock *new_rwl;
+    int i;
 
-    my_assert(NULL, __FILE__, __LINE__, reader_thread_total_no >= 0);
-    my_assert(NULL, __FILE__, __LINE__, writer_thread_total_no >= 0);
+    my_assert(NULL, __FILE__, __LINE__, thread_total_no >= 0);
 
-    new_rwl = (rw_lock *) my_malloc(sizeof(rw_lock));
+    if ((new_rwl = (rw_lock *) malloc(sizeof(rw_lock))) == NULL){
+	perror("malloc");
+	exit(-1);
+    }
+
+    if (pthread_mutex_init(&new_rwl->state_mutex, NULL) != 0){
+	perror("pthread_mutex_init");
+	exit(-1);
+    }
+
+    if (pthread_cond_init(&new_rwl->state_cv, NULL) != 0){
+	perror("pthread_cond_init");
+	exit(-1);
+    }
+
+    /* Reader thread manager */
+    new_rwl->manager.thread_total_no = thread_total_no;
+    if ((new_rwl->manager.reader_threads_count_in_CS =
+	 (int *) malloc(sizeof(int) * thread_total_no)) == NULL){
+	perror("malloc");
+	exit(-1);
+    }
+
+    if ((new_rwl->manager.reader_thread_ids =
+	 (pthread_t *) malloc(sizeof(pthread_t) * thread_total_no)) == NULL){
+	perror("malloc");
+	exit(-1);
+    }
+
+    new_rwl->manager.insert_index = 0;
+
+    for (i = 0; i < thread_total_no; i++){
+	new_rwl->manager.reader_threads_count_in_CS[i] = 0;
+	new_rwl->manager.reader_thread_ids[i] = NULL;
+    }
 
     new_rwl->running_threads_in_CS = 0;
-
-    if (pthread_cond_init(&new_rwl->writer_cv, NULL) != 0){
-	perror("pthread_cond_init");
-	exit(-1);
-    }
-
-    /* reader */
-    new_rwl->reader_thread_in_CS = false;
-    new_rwl->running_reader_threads_in_CS = 0;
-    new_rwl->block_new_reader_thread_entry = false;
     new_rwl->waiting_reader_threads = 0;
-    new_rwl->is_locked_by_reader = false;
-    rw_lock_init_manager(&new_rwl->reader_count_manager,
-			 reader_thread_total_no);
-
-    /* writer */
-    new_rwl->writer_thread_in_CS = false;
-    new_rwl->running_writer_threads_in_CS = 0;
-    new_rwl->block_new_writer_thread_entry = false;
+    new_rwl->writer_recursive_count = 0;
     new_rwl->waiting_writer_threads = 0;
+    new_rwl->is_locked_by_reader = false;
     new_rwl->is_locked_by_writer = false;
-    rw_lock_init_manager(&new_rwl->writer_count_manager,
-			 writer_thread_total_no);
-
-    if (pthread_mutex_init(&new_rwl->state_mutex, NULL) != 0){
-	perror("pthread_mutex_init");
-	exit(-1);
-    }
-
-    if (pthread_cond_init(&new_rwl->reader_cv, NULL) != 0){
-	perror("pthread_cond_init");
-	exit(-1);
-    }
-
-    if (pthread_mutex_init(&new_rwl->state_mutex, NULL) != 0){
-	perror("pthread_mutex_init");
-	exit(-1);
-    }
+    new_rwl->writer_thread_in_CS = NULL;
 
     return new_rwl;
 }
 
 void
 rw_lock_rd_lock(rw_lock *rwl){
-    rec_count_manager *manager;
+    rec_rdt_manager *manager;
     int index;
 
     pthread_mutex_lock(&rwl->state_mutex);
 
-    manager = &rwl->reader_count_manager;
-
     /*
-     * Wait if
-     * (1) there are writer threads in the C.S.
-     * (2) the current reader thread joins the C.S,
-     *     then the number of accepted reader threaas will be exceeded.
-     * (3) the biasedness property is on for writer thread
-     *     and new entry of reader thread is blocked.
+     * For any read operation, wait only if the lock is taken
+     * by a write thread.
+     *
+     * There is no need to check the reader related conditions
+     * in the below predicate, because even if other reader
+     * thread took a lock, it is harmless to set the flag of
+     * reader's lock true again (and also, to increment the
+     * number of reader threads).
      */
-    while((rwl->writer_thread_in_CS && rwl->is_locked_by_writer) ||
-	  (manager->max_threads_count_in_CS <= rwl->running_reader_threads_in_CS + 1) ||
-	  (rwl->block_new_reader_thread_entry == true)){
+    while(rwl->writer_thread_in_CS && rwl->is_locked_by_writer){
 	rwl->waiting_reader_threads++;
-	pthread_cond_wait(&rwl->reader_cv, &rwl->state_mutex);
+	pthread_cond_wait(&rwl->state_cv, &rwl->state_mutex);
 	rwl->waiting_reader_threads++;
     }
+
+    my_assert(NULL, __FILE__, __LINE__,
+	      rwl->writer_thread_in_CS == NULL);
+    my_assert(NULL, __FILE__, __LINE__,
+	      rwl->is_locked_by_writer == false);
 
     /*
      * Manage reader thread's count of the lock, including recursive ones
      */
-    if ((index = rw_lock_get_manager_index(manager)) == -1){
+    manager = &rwl->manager;
+    if ((index = rw_lock_get_reader_index(rwl)) == -1){
 	index = manager->insert_index;
 	manager->insert_index++;
     }
@@ -168,24 +146,25 @@ rw_lock_rd_lock(rw_lock *rwl){
      * If this is a recursive lock, then increment the count
      */
     if (rwl->is_locked_by_reader &&
-	manager->thread_ids[index] != NULL &&
-	manager->threads_count_in_CS[index] != 0){
-	manager->threads_count_in_CS[index]++;
+	manager->reader_thread_ids[index] != NULL &&
+	manager->reader_threads_count_in_CS[index] != 0){
+	manager->reader_threads_count_in_CS[index]++;
 	printf("[%s] %p sets threads_count_in_CS[%d] = '%d' by recursive lock\n",
 	       __FUNCTION__, pthread_self(), index,
-	       manager->threads_count_in_CS[index]);
+	       manager->reader_threads_count_in_CS[index]);
     }else{
 	/* Ensure this lock is a completely new lock */
 	my_assert(NULL, __FILE__, __LINE__,
-		  manager->threads_count_in_CS[index] == 0);
+		  manager->reader_threads_count_in_CS[index] == 0);
 
 	rwl->running_threads_in_CS++;
 	rwl->is_locked_by_reader = true;
-	manager->threads_count_in_CS[index] = 1;
-	manager->thread_ids[index] = pthread_self();
+	manager->reader_threads_count_in_CS[index] = 1;
+	manager->reader_thread_ids[index] = pthread_self();
 
 	printf("[%s] %p created threads_count_in_CS[%d] = '%d' by a new lock\n",
-	       __FUNCTION__, pthread_self(), index, manager->threads_count_in_CS[index]);
+	       __FUNCTION__, pthread_self(), index,
+	       manager->reader_threads_count_in_CS[index]);
     }
 
     pthread_mutex_unlock(&rwl->state_mutex);
@@ -193,108 +172,95 @@ rw_lock_rd_lock(rw_lock *rwl){
 
 void
 rw_lock_wr_lock(rw_lock *rwl){
-    rec_count_manager *manager;
-    int index;
-
     pthread_mutex_lock(&rwl->state_mutex);
-    manager = &rwl->writer_count_manager;
 
-    while((rwl->reader_thread_in_CS && rwl->is_locked_by_reader) ||
-	  (manager->max_threads_count_in_CS <= rwl->running_writer_threads_in_CS + 1) ||
-	  (rwl->block_new_writer_thread_entry == true)){
-	rwl->waiting_writer_threads++;
-	pthread_cond_wait(&rwl->writer_cv, &rwl->state_mutex);
-	rwl->waiting_writer_threads++;
-    }
-
-    /*
-     * Manage reader thread's count of the lock, including recursive ones
-     */
-    if ((index = rw_lock_get_manager_index(manager)) == -1){
-	index = manager->insert_index;
-	manager->insert_index++;
-    }
-
-    /*
-     * If this is a recursive lock, then increment the count
-     */
-    if (rwl->is_locked_by_writer &&
-	manager->thread_ids[index] != NULL &&
-	manager->threads_count_in_CS[index] != 0){
-	manager->threads_count_in_CS[index]++;
-	printf("[%s] %p sets threads_count_in_CS[%d] = '%d' by recursive lock\n",
-	       __FUNCTION__, pthread_self(), index,
-	       manager->threads_count_in_CS[index]);
-    }else{
-	/* Ensure this lock is a completely new lock */
+    /* Support the recursive locking */
+    if (rwl->is_locked_by_writer && rwl->writer_thread_in_CS == pthread_self()){
 	my_assert(NULL, __FILE__, __LINE__,
-		  manager->threads_count_in_CS[index] == 0);
+		  rwl->running_threads_in_CS == 1);
+	my_assert(NULL, __FILE__, __LINE__,
+		  rwl->is_locked_by_reader == false);
 
-	rwl->running_threads_in_CS++;
-	rwl->is_locked_by_writer = true;
-	manager->threads_count_in_CS[index] = 1;
-	manager->thread_ids[index] = pthread_self();
-
-	printf("[%s] %p created threads_count_in_CS[%d] = '%d' by a new lock\n",
-	       __FUNCTION__, pthread_self(), index,
-	       manager->threads_count_in_CS[index]);
+	rwl->writer_recursive_count++;
+	printf("[%s] %p got a recursive lock (count = %d)\n",
+	       __FUNCTION__, pthread_self(), rwl->writer_recursive_count);
+	pthread_mutex_unlock(&rwl->state_mutex);
+	return;
     }
+
+    /*
+     * For any new write operation, wait if the lock is
+     * taken by any other writer thread or if any reader thread
+     * is taking the lock.
+     */
+    while((rwl->writer_thread_in_CS && rwl->is_locked_by_writer) ||
+	  (rwl->is_locked_by_reader && rwl->running_threads_in_CS > 0)){
+	rwl->waiting_writer_threads++;
+	pthread_cond_wait(&rwl->state_cv, &rwl->state_mutex);
+	rwl->waiting_writer_threads++;
+    }
+
+    my_assert(NULL, __FILE__, __LINE__,
+	      rwl->writer_thread_in_CS == NULL);
+    my_assert(NULL, __FILE__, __LINE__,
+	      rwl->is_locked_by_reader == false);
+    my_assert(NULL, __FILE__, __LINE__,
+	      rwl->is_locked_by_writer == false);
+    my_assert(NULL, __FILE__, __LINE__,
+	      rwl->running_threads_in_CS == 0);
+    my_assert(NULL, __FILE__, __LINE__,
+	      rwl->writer_recursive_count == 0);
+
+    rwl->writer_recursive_count = 1;
+    rwl->running_threads_in_CS = 1;
+    rwl->is_locked_by_writer = true;
+    rwl->writer_thread_in_CS = pthread_self();
 
     pthread_mutex_unlock(&rwl->state_mutex);
 }
 
 void
 rw_lock_unlock(rw_lock *rwl){
-    rec_count_manager *manager;
-    int index;
-
     pthread_mutex_lock(&rwl->state_mutex);
 
     if (rwl->is_locked_by_writer){
-	/* Writer path */
-	manager = &rwl->writer_count_manager;
-
+	my_assert(NULL, __FILE__, __LINE__,
+		  rwl->writer_thread_in_CS == pthread_self());
 	my_assert(NULL, __FILE__, __LINE__,
 		  rwl->running_threads_in_CS == 1);
 	my_assert(NULL, __FILE__, __LINE__,
 		  rwl->is_locked_by_reader == false);
+	my_assert(NULL, __FILE__, __LINE__,
+		  rwl->writer_recursive_count > 0);
 
-	/* Search and decrement the index in writer count manager */
-	index = rw_lock_get_manager_index(manager);
-	manager->threads_count_in_CS[index]--;
+	/*
+	 * When there were any calls of recursive lock, then
+	 * decrement the recursive count for writer thread and
+	 * keep holding the lock.
+	 */
+	if (rwl->writer_recursive_count > 0){
+	    rwl->writer_recursive_count--;
 
-	if (manager->threads_count_in_CS[index] == 0){
+	    printf("[%s] %p released a recursive lock (recursive count = %d)\n",
+	       __FUNCTION__, pthread_self(), rwl->writer_recursive_count);
+
 	    /* This writer thread is done with recursive lock work */
-	    if (rwl->running_writer_threads_in_CS == 0){
+	    if (rwl->writer_recursive_count == 0){
+		rwl->running_threads_in_CS = 0;
 		rwl->is_locked_by_writer = false;
 		rwl->writer_thread_in_CS = NULL;
-
 		/* Send a signal only if there is any waiting threads */
-		/* if (rwl->waiting_reader_threads > 0 ||
+		if (rwl->waiting_reader_threads > 0 ||
 		    rwl->waiting_writer_threads > 0)
-		    pthread_cond_signal(&rwl->state_cv); */
-
-		/*
-		 * This is the last writer thread in the C.S. at this moment.
-		 *
-		 * Wake up waiting reader threads if any preferentially.
-		 */
-		if (rwl->waiting_reader_threads > 0){
-		    pthread_cond_broadcast(&rwl->reader_cv);
-		    rwl->block_new_writer_thread_entry = true;
-		    rwl->block_new_reader_thread_entry = false;
-		}else if (rwl->waiting_writer_threads > 0){
-		    pthread_cond_broadcast(&rwl->writer_cv);
-		}
-	    }else{
-		/* Replacement property */
-		
+		    pthread_cond_signal(&rwl->state_cv);
 	    }
 	}
     }else if (rwl->is_locked_by_reader){
-	/* Reader path */
-	manager = &rwl->reader_count_manager;
+	rec_rdt_manager *manager = &rwl->manager;
+	int index;
 
+	my_assert(NULL, __FILE__, __LINE__,
+		  rwl->writer_thread_in_CS == NULL);
 	my_assert(NULL, __FILE__, __LINE__,
 		  rwl->is_locked_by_writer == false);
 
@@ -309,16 +275,16 @@ rw_lock_unlock(rw_lock *rwl){
 	 *
 	 * Raise an assertion failure.
 	 */
-	if ((index = rw_lock_get_manager_index(manager)) == -1)
+	if ((index = rw_lock_get_reader_index(rwl)) == -1)
 	    my_assert(NULL, __FILE__, __LINE__, 0);
 
-	if (manager->threads_count_in_CS[index] - 1 > 1){
+	if (manager->reader_threads_count_in_CS[index] - 1 > 1){
 	    /* This thread utilizes the recursive unlock. Decrement the count */
-	    manager->threads_count_in_CS[index]--;
+	    manager->reader_threads_count_in_CS[index]--;
 	}else{
 	    /* This thread is done with its work in the C.S. section */
 	    rwl->running_threads_in_CS--;
-	    manager->threads_count_in_CS[index] = 0;
+	    manager->reader_threads_count_in_CS[index] = 0;
 	    printf("[%s] %p has released all its reader locks\n",
 		   __FUNCTION__, pthread_self());
 
@@ -326,25 +292,9 @@ rw_lock_unlock(rw_lock *rwl){
 		rwl->is_locked_by_reader = false;
 
 		/* Send a signal only if there is any waiting threads */
-		/* if (rwl->waiting_reader_threads > 0 ||
+		if (rwl->waiting_reader_threads > 0 ||
 		    rwl->waiting_writer_threads > 0)
-		    pthread_cond_signal(&rwl->state_cv); */
-
-		/*
-		 * This is the last reader thread in the C.S. at this moment.
-		 *
-		 * Wake up waiting writer threads if any preferentially.
-		 */
-		if (rwl->waiting_writer_threads > 0){
-		    pthread_cond_broadcast(&rwl->writer_cv);
-		    rwl->block_new_writer_thread_entry = false;
-		    rwl->block_new_reader_thread_entry = true;
-		}else if (rwl->waiting_reader_threads > 0){
-		    pthread_cond_broadcast(&rwl->reader_cv);
-		}
-	    }else{
-		/* Replacement property */
-		pthread_cond_signal(&rwl->writer_cv);
+		    pthread_cond_signal(&rwl->state_cv);
 	    }
 	}
     }else{
@@ -362,18 +312,9 @@ rw_lock_unlock(rw_lock *rwl){
 }
 
 void
-verify_manager_with_all_zeros(rec_count_manager *manager){
+rw_lock_destroy(rw_lock *rwl){
     int i;
 
-    for (i = 0; i < manager->max_threads_count_in_CS; i++){
-	my_assert(NULL, __FILE__, __LINE__,
-		  manager->threads_count_in_CS[i] == 0);
-    }
-
-}
-
-void
-rw_lock_destroy(rw_lock *rwl){
     my_assert(NULL, __FILE__, __LINE__,
 	      rwl->running_threads_in_CS == 0);
     my_assert(NULL, __FILE__, __LINE__,
@@ -381,12 +322,18 @@ rw_lock_destroy(rw_lock *rwl){
     my_assert(NULL, __FILE__, __LINE__,
 	      rwl->waiting_writer_threads == 0);
     my_assert(NULL, __FILE__, __LINE__,
+	      rwl->writer_recursive_count == 0);
+    my_assert(NULL, __FILE__, __LINE__,
 	      rwl->is_locked_by_reader == false);
     my_assert(NULL, __FILE__, __LINE__,
 	      rwl->is_locked_by_writer == false);
-    verify_manager_with_all_zeros(&rwl->reader_count_manager);
-    verify_manager_with_all_zeros(&rwl->writer_count_manager);
-    pthread_cond_destroy(&rwl->reader_cv);
-    pthread_cond_destroy(&rwl->writer_cv);
+    my_assert(NULL, __FILE__, __LINE__,
+	      rwl->writer_thread_in_CS == NULL);
+    for (i = 0; i < rwl->manager.thread_total_no; i++){
+	my_assert(NULL, __FILE__, __LINE__,
+		  rwl->manager.reader_threads_count_in_CS[i] == 0);
+    }
+
+    pthread_cond_destroy(&rwl->state_cv);
     pthread_mutex_destroy(&rwl->state_mutex);
 }
